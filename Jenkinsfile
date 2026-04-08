@@ -3,25 +3,26 @@ pipeline {
 
     environment {
         IMAGE_NAME = "anbtech108/argocd-demo-demo-app1"
-        VERSION = "${env.BUILD_NUMBER}"
+        VERSION = "v${env.BUILD_NUMBER}"  // Jenkins build number as version
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout App Repo') {
             steps {
-                // Ensure we fetch the correct branch
-                git branch: 'main', url: 'https://github.com/anbtech108-hue/argocd-demo-app.git'
+                git branch: 'main', 
+                    url: 'https://github.com/anbtech108-hue/argocd-demo-app.git',
+                    credentialsId: 'github-creds'
             }
         }
 
-        stage('Build Image') {
+        stage('Build Docker Image') {
             steps {
-                sh "docker build -t $IMAGE_NAME:v$VERSION ."
+                sh "docker build -t $IMAGE_NAME:$VERSION ."
             }
         }
 
-        stage('Push Image') {
+        stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'docker-creds',
@@ -29,8 +30,8 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh """
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push $IMAGE_NAME:v$VERSION
+                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                        docker push $IMAGE_NAME:$VERSION
                     """
                 }
             }
@@ -38,14 +39,15 @@ pipeline {
 
         stage('Update GitOps Repo') {
             steps {
-                // Optional: Only if you want to automatically update image tag in Argo CD repo
-                sh """
-                    cd ../argocd-manifests
-                    sed -i 's|image:.*|image: $IMAGE_NAME:v$VERSION|' deployment-app1.yaml
-                    git add deployment-app1.yaml
-                    git commit -m 'Update app1 image to v$VERSION'
-                    git push origin main
-                """
+                dir('../ArgoCD-Demo/development') {  // path to your GitOps repo
+                    sh """
+                        git pull origin main
+                        sed -i 's|image:.*|image: $IMAGE_NAME:$VERSION|' deployment.yaml
+                        git add deployment.yaml
+                        git commit -m "Update image tag to $VERSION"
+                        git push origin main
+                    """
+                }
             }
         }
     }
